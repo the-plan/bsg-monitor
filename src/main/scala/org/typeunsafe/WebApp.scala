@@ -1,23 +1,36 @@
 package org.typeunsafe
-import io.vertx.core.json.JsonObject
+import java.util
+import java.util.{ArrayList, List}
+
+import io.vertx.core.json.{JsonArray, JsonObject}
 import io.vertx.scala.core.Vertx
 import io.vertx.scala.ext.web.Router
+import io.vertx.scala.ext.web.client.WebClient
+import io.vertx.scala.ext.web.handler.StaticHandler
 import io.vertx.scala.servicediscovery.types.HttpEndpoint
-import io.vertx.scala.servicediscovery.{ServiceDiscovery, ServiceDiscoveryOptions}
+import io.vertx.scala.servicediscovery.{Record, ServiceDiscovery, ServiceDiscoveryOptions}
+import io.vertx.servicediscovery.rest.ServiceDiscoveryRestEndpoint
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
+import scala.collection.JavaConverters._
 
 package object WebApp {
 
-  val vertx = Vertx.vertx()
+  val vertx: Vertx = Vertx.vertx()
 
-  def discovery = {
+  //TODO manage the on stop
+
+  def main(args: Array[String]): Unit = {
+    val server = vertx.createHttpServer()
+    val router = Router.router(vertx)
+
     // Settings for the Redis backend
-    val redisHost = sys.env.get("REDIS_HOST").getOrElse("127.0.0.1")
-    val redisPort = sys.env.get("REDIS_PORT").getOrElse("6379").toInt
-    val redisAuth = sys.env.get("REDIS_PASSWORD").getOrElse(null)
-    val redisRecordsKey = sys.env.get("REDIS_RECORDS_KEY").getOrElse("scala-records")
+    val redisHost = sys.env.getOrElse("REDIS_HOST", "127.0.0.1")
+    val redisPort = sys.env.getOrElse("REDIS_PORT", "6379").toInt
+    val redisAuth = sys.env.getOrElse("REDIS_PASSWORD", null)
+    val redisRecordsKey = sys.env.getOrElse("REDIS_RECORDS_KEY", "vert.x.ms")
 
     // Mount the service discovery backend (Redis)
     val discovery = ServiceDiscovery.create(vertx, ServiceDiscoveryOptions()
@@ -30,61 +43,58 @@ package object WebApp {
       )
     )
 
-    // Settings for record the service
-    val serviceId = sys.env.get("SERVICE_ID").getOrElse("johndoe")
-    val serviceHost = sys.env.get("SERVICE_HOST").getOrElse("localhost") // domain name
-    val servicePort = sys.env.get("SERVICE_PORT").getOrElse("8080").toInt // set to 80 on Clever Cloud
-    val serviceRoot = sys.env.get("SERVICE_ROOT").getOrElse("/api")
+
+    // set and create a record
+    val serviceName = sys.env.getOrElse("SERVICE_NAME", "monitor")
+    val serviceHost = sys.env.getOrElse("SERVICE_HOST", "localhost") // domain name
+    val servicePort = sys.env.getOrElse("SERVICE_PORT", "8080").toInt // set to 80 on Clever Cloud
+    val serviceRoot = sys.env.getOrElse("SERVICE_ROOT", "/api")
 
     // create the microservice record
     val record = HttpEndpoint.createRecord(
-      serviceId,
+      serviceName,
       serviceHost,
       servicePort,
       serviceRoot
     )
 
+    //TODO: with the other projects when query on metadata if there
+    record.setMetadata(new JsonObject()
+        .put("kind", "monitor")
+    )
+
+
     discovery.publishFuture(record).onComplete{
       case Success(result) => println(s"😃 publication OK")
       case Failure(cause) => println(s"😡 publication KO: $cause")
     }
-    // discovery.close() // or not
-  }
 
-  def main(args: Array[String]): Unit = {
-    val server = vertx.createHttpServer()
-    val router = Router.router(vertx)
 
-    // use redis backend to publish service informations
-    discovery
+    val httpPort = sys.env.getOrElse("PORT", "8080").toInt
 
-    val httpPort = sys.env.get ("PORT").getOrElse("8080").toInt
+    router.get("/api/raiders").handler(context => {
 
-    // my services
-    router.get("/api/add/:a/:b").handler(context => {
-      val res: Integer = context.request.getParam("a").get.toInt + context.request.getParam("b").get.toInt
-      context
-        .response()
-        .putHeader("content-type", "application/json;charset=UTF-8")
-        .end(new JsonObject().put("result", res).encodePrettily())
+      discovery
+        .getRecordsFuture(record => record.getMetadata.getString("kind").equals("raider"))
+        .onComplete {
+          case Success(results) => {
+            //TODO here we can have a NPE
+            context
+              .response()
+              .putHeader("content-type", "application/json;charset=UTF-8")
+              .end(new JsonArray(results.toList.asJava).encodePrettily())
+
+          }
+          case Failure(cause) => {
+            context
+              .response()
+              .putHeader("content-type", "application/json;charset=UTF-8")
+              .end(new JsonObject().put("error", cause.getMessage).encodePrettily())
+          }
+        }
     })
 
-    router.get("/api/multiply/:a/:b").handler(context => {
-      val res: Integer = context.request.getParam("a").get.toInt * context.request.getParam("b").get.toInt
-      context
-        .response()
-        .putHeader("content-type", "application/json;charset=UTF-8")
-        .end(new JsonObject().put("result", res).encodePrettily())
-
-    })
-
-    // home page
-    router.get("/").handler(context => {
-      context
-        .response()
-        .putHeader("content-type", "text/html;charset=UTF-8")
-        .end("<h1>Hello 🌍</h1>")
-    })
+    router.route("/*").handler(StaticHandler.create())
 
     println(s"🌍 Listening on $httpPort  - Enjoy 😄")
     server.requestHandler(router.accept _).listen(httpPort)
