@@ -12,3 +12,5 @@ target/
 out/
 project/target/*
 project/project/*
+.ensime_cache
+.ensime

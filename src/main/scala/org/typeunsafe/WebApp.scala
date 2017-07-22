@@ -5,6 +5,7 @@ import java.util.{ArrayList, List}
 import io.vertx.core.json.{JsonArray, JsonObject}
 import io.vertx.scala.core.Vertx
 import io.vertx.scala.ext.web.Router
+import io.vertx.scala.ext.web.RoutingContext
 import io.vertx.scala.ext.web.client.WebClient
 import io.vertx.scala.ext.web.handler.StaticHandler
 import io.vertx.scala.servicediscovery.types.HttpEndpoint
@@ -93,6 +94,8 @@ package object WebApp {
           }
         }
     })
+
+    ServiceDiscoveryRestEndpoint.create(router.asJava.asInstanceOf[io.vertx.ext.web.Router], discovery.asJava.asInstanceOf[io.vertx.servicediscovery.ServiceDiscovery])
 
     router.route("/*").handler(StaticHandler.create())
 
