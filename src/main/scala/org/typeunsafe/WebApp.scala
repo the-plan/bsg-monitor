@@ -70,7 +70,6 @@ package object WebApp {
       case Failure(cause) => println(s"😡 publication KO: $cause")
     }
 
-
     val httpPort = sys.env.getOrElse("PORT", "8080").toInt
 
     router.get("/api/raiders").handler(context => {
