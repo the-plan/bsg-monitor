@@ -2,6 +2,7 @@ package org.typeunsafe
 import java.util
 import java.util.{ArrayList, List}
 
+import io.vertx.core.{AbstractVerticle, Handler}
 import io.vertx.core.json.{JsonArray, JsonObject}
 import io.vertx.scala.core.Vertx
 import io.vertx.scala.ext.web.Router
@@ -17,9 +18,18 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
 import scala.collection.JavaConverters._
 
+
+/*
+class WebApp extends AbstractVerticle () {
+
+}
+*/
+
+
 package object WebApp {
 
   val vertx: Vertx = Vertx.vertx()
+
 
   //TODO manage the on stop
 
@@ -45,34 +55,13 @@ package object WebApp {
     )
 
 
-    // set and create a record
-    val serviceName = sys.env.getOrElse("SERVICE_NAME", "monitor")
-    val serviceHost = sys.env.getOrElse("SERVICE_HOST", "localhost") // domain name
-    val servicePort = sys.env.getOrElse("SERVICE_PORT", "8080").toInt // set to 80 on Clever Cloud
-    val serviceRoot = sys.env.getOrElse("SERVICE_ROOT", "/api")
-
-    // create the microservice record
-    val record = HttpEndpoint.createRecord(
-      serviceName,
-      serviceHost,
-      servicePort,
-      serviceRoot
-    )
-
-    //TODO: with the other projects when query on metadata if there
-    record.setMetadata(new JsonObject()
-        .put("kind", "monitor")
-    )
-
-
-    discovery.publishFuture(record).onComplete{
-      case Success(result) => println(s"😃 publication OK")
-      case Failure(cause) => println(s"😡 publication KO: $cause")
-    }
 
     val httpPort = sys.env.getOrElse("PORT", "8080").toInt
 
+    //router.get("/api/raiders").handler(context: Handler[RoutingContext] => {})
+
     router.get("/api/raiders").handler(context => {
+
 
       discovery
         .getRecordsFuture(record => record.getMetadata.getString("kind").equals("raider"))
