@@ -15,3 +15,5 @@ project/project/*
 .ensime_cache
 .ensime
 create.sh
+.clever.json
+.DS_Store
