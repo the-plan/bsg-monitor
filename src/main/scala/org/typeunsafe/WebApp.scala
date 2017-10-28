@@ -1,24 +1,15 @@
 package org.typeunsafe
 
-import java.util
-import java.util.{ArrayList, List}
-
-import io.vertx.core.{AbstractVerticle, Handler}
 import io.vertx.core.json.{JsonArray, JsonObject}
 import io.vertx.scala.core.Vertx
 import io.vertx.scala.ext.web.Router
-import io.vertx.scala.ext.web.RoutingContext
-import io.vertx.scala.ext.web.client.WebClient
 import io.vertx.scala.ext.web.handler.StaticHandler
-import io.vertx.scala.ext.web.handler.sockjs.{BridgeOptions, PermittedOptions, SockJSHandler}
-import io.vertx.scala.servicediscovery.types.HttpEndpoint
-import io.vertx.scala.servicediscovery.{Record, ServiceDiscovery, ServiceDiscoveryOptions}
+import io.vertx.scala.servicediscovery.{ServiceDiscovery, ServiceDiscoveryOptions}
 import io.vertx.servicediscovery.rest.ServiceDiscoveryRestEndpoint
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
-import scala.collection.JavaConverters._
 
 
 /*
@@ -39,8 +30,6 @@ package object WebApp {
     val server = vertx.createHttpServer()
     val router = Router.router(vertx)
 
-    // Setings EventBus options
-    val bridgeOptions = BridgeOptions().addOutboundPermitted(PermittedOptions().setAddress("raiders"))
     val updateInterval = 1000L
 
     // Settings for the Redis backend
@@ -63,34 +52,27 @@ package object WebApp {
 
     val httpPort = sys.env.getOrElse("PORT", "8080").toInt
 
+    router.route("/api/raiders").handler(context => {
+      context.response().setChunked(true)
+      context.response().putHeader("Content-Type", "text/event-stream")
+      context.response().putHeader("Connection", "keep-alive")
+      context.response().putHeader("Cache-Control", "no-cache")
+      context.response().putHeader("Access-Control-Allow-Origin", "*")
 
-    val sockJSHandler = SockJSHandler.create(vertx).bridge(bridgeOptions)
-    router.route("/eventbus/*").handler(sockJSHandler)
-
-
-    //router.get("/api/raiders").handler(context: Handler[RoutingContext] => {})
-
-    router.get("/api/raiders").handler(context => {
-
-
-      discovery
-        .getRecordsFuture(record => record.getMetadata.getString("kind").equals("raider"))
-        .onComplete {
-          case Success(results) => {
-            //TODO here we can have a NPE
-            context
-              .response()
-              .putHeader("content-type", "application/json;charset=UTF-8")
-              .end(new JsonArray(results.toList.asJava).encodePrettily())
-
+      vertx.setPeriodic(updateInterval, _ => {
+        discovery
+          .getRecordsFuture(record => record.getMetadata.getString("kind").equals("raider"))
+          .onComplete {
+            case Success(results) => {
+              //TODO here we can have a NPE
+              val raidersToSend = new JsonArray(results.toList.asJava)
+              context.response().write("data: " + raidersToSend + "\n\n")
+            }
+            case Failure(cause) => {
+              //TODO Send error
+            }
           }
-          case Failure(cause) => {
-            context
-              .response()
-              .putHeader("content-type", "application/json;charset=UTF-8")
-              .end(new JsonObject().put("error", cause.getMessage).encodePrettily())
-          }
-        }
+      }) // Start timer for fetching raiders infos.
     })
 
 
@@ -100,21 +82,5 @@ package object WebApp {
 
     println(s"🌍 Listening on $httpPort  - Enjoy 😄")
     server.requestHandler(router.accept _).listenFuture(httpPort)
-
-    vertx.setPeriodic(updateInterval, _ => {
-      discovery
-        .getRecordsFuture(record => record.getMetadata.getString("kind").equals("raider"))
-        .onComplete {
-          case Success(results) => {
-            //TODO here we can have a NPE
-            vertx.eventBus().publish("raiders", new JsonArray(results.toList.asJava).encodePrettily())
-
-
-          }
-          case Failure(cause) => {
-            //TODO Send error
-          }
-        }
-    }) // Start timer for fetching raiders infos.
   }
 }
