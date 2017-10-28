@@ -1,4 +1,5 @@
 package org.typeunsafe
+
 import java.util
 import java.util.{ArrayList, List}
 
@@ -9,6 +10,7 @@ import io.vertx.scala.ext.web.Router
 import io.vertx.scala.ext.web.RoutingContext
 import io.vertx.scala.ext.web.client.WebClient
 import io.vertx.scala.ext.web.handler.StaticHandler
+import io.vertx.scala.ext.web.handler.sockjs.{BridgeOptions, PermittedOptions, SockJSHandler}
 import io.vertx.scala.servicediscovery.types.HttpEndpoint
 import io.vertx.scala.servicediscovery.{Record, ServiceDiscovery, ServiceDiscoveryOptions}
 import io.vertx.servicediscovery.rest.ServiceDiscoveryRestEndpoint
@@ -37,6 +39,10 @@ package object WebApp {
     val server = vertx.createHttpServer()
     val router = Router.router(vertx)
 
+    // Setings EventBus options
+    val bridgeOptions = BridgeOptions().addOutboundPermitted(PermittedOptions().setAddress("raiders"))
+    val updateInterval = 1000L
+
     // Settings for the Redis backend
     val redisHost = sys.env.getOrElse("REDIS_HOST", "127.0.0.1")
     val redisPort = sys.env.getOrElse("REDIS_PORT", "6379").toInt
@@ -55,8 +61,12 @@ package object WebApp {
     )
 
 
-
     val httpPort = sys.env.getOrElse("PORT", "8080").toInt
+
+
+    val sockJSHandler = SockJSHandler.create(vertx).bridge(bridgeOptions)
+    router.route("/eventbus/*").handler(sockJSHandler)
+
 
     //router.get("/api/raiders").handler(context: Handler[RoutingContext] => {})
 
@@ -83,11 +93,28 @@ package object WebApp {
         }
     })
 
+
     ServiceDiscoveryRestEndpoint.create(router.asJava.asInstanceOf[io.vertx.ext.web.Router], discovery.asJava.asInstanceOf[io.vertx.servicediscovery.ServiceDiscovery])
 
     router.route("/*").handler(StaticHandler.create())
 
     println(s"🌍 Listening on $httpPort  - Enjoy 😄")
-    server.requestHandler(router.accept _).listen(httpPort)
+    server.requestHandler(router.accept _).listenFuture(httpPort)
+
+    vertx.setPeriodic(updateInterval, _ => {
+      discovery
+        .getRecordsFuture(record => record.getMetadata.getString("kind").equals("raider"))
+        .onComplete {
+          case Success(results) => {
+            //TODO here we can have a NPE
+            vertx.eventBus().publish("raiders", new JsonArray(results.toList.asJava).encodePrettily())
+
+
+          }
+          case Failure(cause) => {
+            //TODO Send error
+          }
+        }
+    }) // Start timer for fetching raiders infos.
   }
 }
